@@ -32,6 +32,7 @@ namespace BTCPayServer.Payments.Bitcoin
         public TxOut Output { get; set; }
         public int ConfirmationCount { get; set; }
         public bool RBF { get; set; }
+        public decimal NetworkFee { get; set; }
 
         /// <summary>
         /// This is set to true if the payment was created before CryptoPaymentData existed in BTCPayServer
@@ -53,12 +54,12 @@ namespace BTCPayServer.Payments.Bitcoin
             return Output.Value.ToDecimal(MoneyUnit.BTC);
         }
 
-        public bool PaymentCompleted(PaymentEntity entity, BTCPayNetwork network)
+        public bool PaymentCompleted(PaymentEntity entity, BTCPayNetworkBase network)
         {
             return ConfirmationCount >= network.MaxTrackedConfirmation;
         }
 
-        public bool PaymentConfirmed(PaymentEntity entity, SpeedPolicy speedPolicy, BTCPayNetwork network)
+        public bool PaymentConfirmed(PaymentEntity entity, SpeedPolicy speedPolicy, BTCPayNetworkBase network)
         {
             if (speedPolicy == SpeedPolicy.HighSpeed)
             {
@@ -77,6 +78,16 @@ namespace BTCPayServer.Payments.Bitcoin
                 return ConfirmationCount >= 6;
             }
             return false;
+        }
+
+        public BitcoinAddress GetDestination(BTCPayNetworkBase network)
+        {
+            return Output.ScriptPubKey.GetDestinationAddress(((BTCPayNetwork)network).NBitcoinNetwork);
+        }
+
+        string CryptoPaymentData.GetDestination(BTCPayNetworkBase network)
+        {
+            return GetDestination(network).ToString();
         }
     }
 }

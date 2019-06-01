@@ -1,7 +1,5 @@
 ﻿using System;
 using Microsoft.Extensions.Logging;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Routing;
 using Microsoft.AspNetCore.Http.Extensions;
 using System.Collections.Generic;
 using System.IO;
@@ -10,13 +8,9 @@ using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
 using BTCPayServer.Authentication;
-using BTCPayServer.Models;
 using BTCPayServer.Services;
 using BTCPayServer.Services.Stores;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc.Filters;
-using Microsoft.AspNetCore.Mvc.Infrastructure;
 using Microsoft.Extensions.Options;
 using NBitcoin;
 using NBitcoin.DataEncoders;
@@ -27,7 +21,6 @@ using BTCPayServer.Logging;
 using Microsoft.AspNetCore.Http.Internal;
 using Microsoft.AspNetCore.Authentication;
 using System.Text.Encodings.Web;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace BTCPayServer.Security
 {
@@ -57,43 +50,52 @@ namespace BTCPayServer.Security
                     List<Claim> claims = new List<Claim>();
                     var bitpayAuth = Context.Request.HttpContext.GetBitpayAuth();
                     string storeId = null;
-                    // Careful, those are not the opposite. failedAuth says if a the tentative failed.
-                    // successAuth, ensure that at least one succeed.
-                    var failedAuth = false;
-                    var successAuth = false;
+                    bool anonymous = true;
+                    bool? success = null;
                     if (!string.IsNullOrEmpty(bitpayAuth.Signature) && !string.IsNullOrEmpty(bitpayAuth.Id))
                     {
                         var result = await CheckBitId(Context.Request.HttpContext, bitpayAuth.Signature, bitpayAuth.Id, claims);
                         storeId = result.StoreId;
-                        failedAuth = !result.SuccessAuth;
-                        successAuth = result.SuccessAuth;
+                        success = result.SuccessAuth;
+                        anonymous = false;
                     }
                     else if (!string.IsNullOrEmpty(bitpayAuth.Authorization))
                     {
                         storeId = await CheckLegacyAPIKey(Context.Request.HttpContext, bitpayAuth.Authorization);
-                        if (storeId == null)
-                        {
-                            Logs.PayServer.LogDebug("API key check failed");
-                            failedAuth = true;
-                        }
-                        successAuth = storeId != null;
+                        success = storeId != null;
+                        anonymous = false;
                     }
-
-                    if (failedAuth)
+                    else
                     {
-                        return AuthenticateResult.Fail("Invalid credentials");
+                        if (Context.Request.HttpContext.Request.Query.TryGetValue("storeId", out var storeIdStringValues))
+                        {
+                            storeId = storeIdStringValues.FirstOrDefault() ?? string.Empty;
+                            success = true;
+                            anonymous = true;
+                        }
                     }
 
-                    if (successAuth)
+                    if (success is true)
                     {
                         if (storeId != null)
                         {
-                            claims.Add(new Claim(Policies.CanUseStore.Key, storeId));
+                            claims.Add(new Claim(Policies.CanCreateInvoice.Key, storeId));
                             var store = await _StoreRepository.FindStore(storeId);
+                            if (store == null ||
+                               (anonymous && !store.GetStoreBlob().AnyoneCanInvoice))
+                            {
+                                return AuthenticateResult.Fail("Invalid credentials");
+                            }
+                            store.AdditionalClaims.AddRange(claims);
                             Context.Request.HttpContext.SetStoreData(store);
                         }
                         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(claims, Policies.BitpayAuthentication)), Policies.BitpayAuthentication));
                     }
+                    else if (success is false)
+                    {
+                        return AuthenticateResult.Fail("Invalid credentials");
+                    }
+                    // else if (success is null)
                 }
                 return AuthenticateResult.NoResult();
             }
@@ -132,20 +134,24 @@ namespace BTCPayServer.Security
                         {
                             try
                             {
-                                token = JObject.Parse(body)?.Property("token")?.Value?.Value<string>();
+                                token = JObject.Parse(body)?.Property("token", StringComparison.OrdinalIgnoreCase)?.Value?.Value<string>();
                             }
                             catch { }
                         }
 
                         if (token != null)
                         {
-                            var bitToken = await GetTokenPermissionAsync(sin, token);
+                            var bitToken = (await _TokenRepository.GetTokens(sin)).FirstOrDefault();
                             if (bitToken == null)
                             {
                                 return (null, false);
                             }
                             storeId = bitToken.StoreId;
                         }
+                    }
+                    else
+                    {
+                        return (storeId, false);
                     }
                 }
                 catch (FormatException) { }
@@ -171,77 +177,11 @@ namespace BTCPayServer.Security
                 }
                 return await _TokenRepository.GetStoreIdFromAPIKey(apiKey);
             }
-
-            private async Task<BitTokenEntity> GetTokenPermissionAsync(string sin, string expectedToken)
-            {
-                var actualTokens = (await _TokenRepository.GetTokens(sin)).ToArray();
-                actualTokens = actualTokens.SelectMany(t => GetCompatibleTokens(t)).ToArray();
-
-                var actualToken = actualTokens.FirstOrDefault(a => a.Value.Equals(expectedToken, StringComparison.Ordinal));
-                if (expectedToken == null || actualToken == null)
-                {
-                    Logs.PayServer.LogDebug($"No token found for facade {Facade.Merchant} for SIN {sin}");
-                    return null;
-                }
-                return actualToken;
-            }
-
-            private IEnumerable<BitTokenEntity> GetCompatibleTokens(BitTokenEntity token)
-            {
-                if (token.Facade == Facade.Merchant.ToString())
-                {
-                    yield return token.Clone(Facade.User);
-                    yield return token.Clone(Facade.PointOfSale);
-                }
-                if (token.Facade == Facade.PointOfSale.ToString())
-                {
-                    yield return token.Clone(Facade.User);
-                }
-                yield return token;
-            }
-
-            private bool IsBitpayAPI(HttpContext httpContext, bool bitpayAuth)
-            {
-                if (!httpContext.Request.Path.HasValue)
-                    return false;
-
-                var isJson = (httpContext.Request.ContentType ?? string.Empty).StartsWith("application/json", StringComparison.OrdinalIgnoreCase);
-                var path = httpContext.Request.Path.Value;
-                if (
-                    bitpayAuth &&
-                    path == "/invoices" &&
-                  httpContext.Request.Method == "POST" &&
-                  isJson)
-                    return true;
-
-                if (
-                    bitpayAuth &&
-                    path == "/invoices" &&
-                  httpContext.Request.Method == "GET")
-                    return true;
-
-                if (
-                    path.StartsWith("/invoices/", StringComparison.OrdinalIgnoreCase) &&
-                    httpContext.Request.Method == "GET" &&
-                    (isJson || httpContext.Request.Query.ContainsKey("token")))
-                    return true;
-
-                if (path.Equals("/rates", StringComparison.OrdinalIgnoreCase) &&
-                    httpContext.Request.Method == "GET")
-                    return true;
-
-                if (
-                    path.Equals("/tokens", StringComparison.Ordinal) &&
-                    (httpContext.Request.Method == "GET" || httpContext.Request.Method == "POST"))
-                    return true;
-
-                return false;
-            }
         }
-        internal static void AddAuthentication(IServiceCollection services, Action<BitpayAuthOptions> bitpayAuth = null)
+        public static void AddAuthentication(AuthenticationBuilder builder, Action<BitpayAuthOptions> bitpayAuth = null)
         {
             bitpayAuth = bitpayAuth ?? new Action<BitpayAuthOptions>((o) => { });
-            services.AddAuthentication().AddScheme<BitpayAuthOptions, BitpayAuthHandler>(Policies.BitpayAuthentication, bitpayAuth);
+            builder.AddScheme<BitpayAuthOptions, BitpayAuthHandler>(Policies.BitpayAuthentication, bitpayAuth);
         }
     }
 }

@@ -16,7 +16,7 @@ namespace BTCPayServer.Payments
             if (cryptoCode == null)
                 throw new ArgumentNullException(nameof(cryptoCode));
             PaymentType = paymentType;
-            CryptoCode = cryptoCode;
+            CryptoCode = cryptoCode.ToUpperInvariant();
         }
 
         [Obsolete("Should only be used for legacy stuff")]
@@ -62,15 +62,47 @@ namespace BTCPayServer.Payments
 
         public override string ToString()
         {
-            if (PaymentType == PaymentTypes.BTCLike)
-                return CryptoCode;
-            return CryptoCode + "_" + PaymentType.ToString();
+            //BTCLike case is special because it is in legacy mode.
+            return PaymentType == PaymentTypes.BTCLike ? CryptoCode : $"{CryptoCode}_{PaymentType}";
         }
 
+        public static bool TryParse(string str, out PaymentMethodId paymentMethodId)
+        {
+            paymentMethodId = null;
+            var parts = str.Split('_', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0 || parts.Length > 2)
+                return false;
+            PaymentTypes type = PaymentTypes.BTCLike;
+            if (parts.Length == 2)
+            {
+                var typePart = parts[1].ToLowerInvariant();
+                switch (typePart)
+                {
+                    case "btclike":
+                    case "onchain":
+                        type = PaymentTypes.BTCLike;
+                        break;
+                    case "lightninglike":
+                    case "offchain":
+                        type = PaymentTypes.LightningLike;
+                        break;
+                    default:
+                        if (!Enum.TryParse(typePart, true, out type ))
+                        {
+                            return false;
+                        }
+
+                        break;
+                }
+            }
+            paymentMethodId = new PaymentMethodId(parts[0], type);
+            return true;
+        }
         public static PaymentMethodId Parse(string str)
         {
-            var parts = str.Split('_');
-            return new PaymentMethodId(parts[0], parts.Length == 1 ? PaymentTypes.BTCLike : Enum.Parse<PaymentTypes>(parts[1]));
+            if (!TryParse(str, out var result))
+                throw new FormatException("Invalid PaymentMethodId");
+            return result;
         }
     }
 }

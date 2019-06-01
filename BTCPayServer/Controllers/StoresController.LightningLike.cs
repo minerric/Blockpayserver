@@ -5,12 +5,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using BTCPayServer.Models.StoreViewModels;
 using BTCPayServer.Payments;
-using BTCPayServer.Payments.Lightning.CLightning;
 using Microsoft.AspNetCore.Mvc;
 using BTCPayServer.Payments.Lightning;
 using System.Net;
 using BTCPayServer.Data;
 using System.Threading;
+using BTCPayServer.Lightning;
 
 namespace BTCPayServer.Controllers
 {
@@ -27,7 +27,8 @@ namespace BTCPayServer.Controllers
             LightningNodeViewModel vm = new LightningNodeViewModel
             {
                 CryptoCode = cryptoCode,
-                InternalLightningNode = GetInternalLighningNode(cryptoCode)?.ToString()
+                InternalLightningNode = GetInternalLighningNode(cryptoCode)?.ToString(),
+                StoreId = storeId
             };
             SetExistingValues(store, vm);
             return View(vm);
@@ -114,7 +115,7 @@ namespace BTCPayServer.Controllers
                     }
                     if(!System.IO.File.Exists(connectionString.MacaroonFilePath))
                     {
-                        ModelState.AddModelError(nameof(vm.ConnectionString), "The macaroonfilepath file does exist");
+                        ModelState.AddModelError(nameof(vm.ConnectionString), "The macaroonfilepath file does not exist");
                         return View(vm);
                     }
                     if(!System.IO.Path.IsPathRooted(connectionString.MacaroonFilePath))
@@ -151,10 +152,10 @@ namespace BTCPayServer.Controllers
                     ModelState.AddModelError(nameof(vm.ConnectionString), "Missing url parameter");
                     return View(vm);
                 case "test":
-                    var handler = (LightningLikePaymentHandler)_ServiceProvider.GetRequiredService<IPaymentMethodHandler<Payments.Lightning.LightningSupportedPaymentMethod>>();
+                    var handler = _ServiceProvider.GetRequiredService<LightningLikePaymentHandler>();
                     try
                     {
-                        var info = await handler.Test(paymentMethod, network);
+                        var info = await handler.GetNodeInfo(this.Request.IsOnion(), paymentMethod, network);
                         if (!vm.SkipPortTest)
                         {
                             using (CancellationTokenSource cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
