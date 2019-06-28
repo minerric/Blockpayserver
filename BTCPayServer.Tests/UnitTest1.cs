@@ -123,7 +123,7 @@ namespace BTCPayServer.Tests
                 }));
             invoiceEntity.SetPaymentMethods(paymentMethods);
 
-            var btc = invoiceEntity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike), null);
+            var btc = invoiceEntity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike));
             var accounting = btc.Calculate();
 
             invoiceEntity.Payments.Add(
@@ -153,14 +153,14 @@ namespace BTCPayServer.Tests
             Assert.Equal(Money.Zero, accounting.Due);
             Assert.Equal(Money.Zero, accounting.DueUncapped);
 
-            var ltc = invoiceEntity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike), null);
+            var ltc = invoiceEntity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike));
             accounting = ltc.Calculate();
 
             Assert.Equal(Money.Zero, accounting.Due);
             // LTC might have over paid due to BTC paying above what it should (round 1 satoshi up)
             Assert.True(accounting.DueUncapped < Money.Zero);
 
-            var paymentMethod = InvoiceWatcher.GetNearestClearedPayment(paymentMethods, out var accounting2, null);
+            var paymentMethod = InvoiceWatcher.GetNearestClearedPayment(paymentMethods, out var accounting2);
             Assert.Equal(btc.CryptoCode, paymentMethod.CryptoCode);
 #pragma warning restore CS0618
         }
@@ -281,11 +281,11 @@ namespace BTCPayServer.Tests
                 new PaymentMethod() {CryptoCode = "LTC", Rate = 500, NextNetworkFee = Money.Coins(0.01m)});
             entity.SetPaymentMethods(paymentMethods);
             entity.Payments = new List<PaymentEntity>();
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Coins(5.1m), accounting.Due);
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
 
             Assert.Equal(Money.Coins(10.01m), accounting.TotalDue);
@@ -298,7 +298,7 @@ namespace BTCPayServer.Tests
                 NetworkFee = 0.1m
             });
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Coins(4.2m), accounting.Due);
             Assert.Equal(Money.Coins(1.0m), accounting.CryptoPaid);
@@ -306,7 +306,7 @@ namespace BTCPayServer.Tests
             Assert.Equal(Money.Coins(5.2m), accounting.TotalDue);
             Assert.Equal(2, accounting.TxRequired);
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Coins(10.01m + 0.1m * 2 - 2.0m /* 8.21m */), accounting.Due);
             Assert.Equal(Money.Coins(0.0m), accounting.CryptoPaid);
@@ -321,7 +321,7 @@ namespace BTCPayServer.Tests
                 NetworkFee = 0.01m
             });
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Coins(4.2m - 0.5m + 0.01m / 2), accounting.Due);
             Assert.Equal(Money.Coins(1.0m), accounting.CryptoPaid);
@@ -329,7 +329,7 @@ namespace BTCPayServer.Tests
             Assert.Equal(Money.Coins(5.2m + 0.01m / 2), accounting.TotalDue); // The fee for LTC added
             Assert.Equal(2, accounting.TxRequired);
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Coins(8.21m - 1.0m + 0.01m), accounting.Due);
             Assert.Equal(Money.Coins(1.0m), accounting.CryptoPaid);
@@ -346,7 +346,7 @@ namespace BTCPayServer.Tests
                 NetworkFee = 0.1m
             });
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("BTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Zero, accounting.Due);
             Assert.Equal(Money.Coins(1.0m) + remaining, accounting.CryptoPaid);
@@ -355,7 +355,7 @@ namespace BTCPayServer.Tests
             Assert.Equal(accounting.Paid, accounting.TotalDue);
             Assert.Equal(2, accounting.TxRequired);
 
-            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike), null);
+            paymentMethod = entity.GetPaymentMethod(new PaymentMethodId("LTC", PaymentTypes.BTCLike));
             accounting = paymentMethod.Calculate();
             Assert.Equal(Money.Zero, accounting.Due);
             Assert.Equal(Money.Coins(1.0m), accounting.CryptoPaid);
@@ -2657,27 +2657,28 @@ donation:
         {
             var unusedUri = new Uri("https://toto.com");
             Assert.True(ExternalConnectionString.TryParse("server=/test", out var connStr, out var error));
-            var expanded = await connStr.Expand(new Uri("https://toto.com"), ExternalServiceTypes.Charge);
+            var expanded = await connStr.Expand(new Uri("https://toto.com"), ExternalServiceTypes.Charge, NetworkType.Mainnet);
             Assert.Equal(new Uri("https://toto.com/test"), expanded.Server);
-            expanded = await connStr.Expand(new Uri("http://toto.onion"), ExternalServiceTypes.Charge);
+            expanded = await connStr.Expand(new Uri("http://toto.onion"), ExternalServiceTypes.Charge, NetworkType.Mainnet);
             Assert.Equal(new Uri("http://toto.onion/test"), expanded.Server);
-            await Assert.ThrowsAsync<SecurityException>(() => connStr.Expand(new Uri("http://toto.com"), ExternalServiceTypes.Charge));
+            await Assert.ThrowsAsync<SecurityException>(() => connStr.Expand(new Uri("http://toto.com"), ExternalServiceTypes.Charge, NetworkType.Mainnet));
+            await connStr.Expand(new Uri("http://toto.com"), ExternalServiceTypes.Charge, NetworkType.Testnet);
 
             // Make sure absolute paths are not expanded
             Assert.True(ExternalConnectionString.TryParse("server=https://tow/test", out connStr, out error));
-            expanded = await connStr.Expand(new Uri("https://toto.com"), ExternalServiceTypes.Charge);
+            expanded = await connStr.Expand(new Uri("https://toto.com"), ExternalServiceTypes.Charge, NetworkType.Mainnet);
             Assert.Equal(new Uri("https://tow/test"), expanded.Server);
 
             // Error if directory not exists
             Assert.True(ExternalConnectionString.TryParse($"server={unusedUri};macaroondirectorypath=pouet", out connStr, out error));
-            await Assert.ThrowsAsync<DirectoryNotFoundException>(() => connStr.Expand(unusedUri, ExternalServiceTypes.LNDGRPC));
-            await Assert.ThrowsAsync<DirectoryNotFoundException>(() => connStr.Expand(unusedUri, ExternalServiceTypes.LNDRest));
-            await connStr.Expand(unusedUri, ExternalServiceTypes.Charge);
+            await Assert.ThrowsAsync<DirectoryNotFoundException>(() => connStr.Expand(unusedUri, ExternalServiceTypes.LNDGRPC, NetworkType.Mainnet));
+            await Assert.ThrowsAsync<DirectoryNotFoundException>(() => connStr.Expand(unusedUri, ExternalServiceTypes.LNDRest, NetworkType.Mainnet));
+            await connStr.Expand(unusedUri, ExternalServiceTypes.Charge, NetworkType.Mainnet);
 
             var macaroonDirectory = CreateDirectory();
             Assert.True(ExternalConnectionString.TryParse($"server={unusedUri};macaroondirectorypath={macaroonDirectory}", out connStr, out error));
-            await connStr.Expand(unusedUri, ExternalServiceTypes.LNDGRPC);
-            expanded = await connStr.Expand(unusedUri, ExternalServiceTypes.LNDRest);
+            await connStr.Expand(unusedUri, ExternalServiceTypes.LNDGRPC, NetworkType.Mainnet);
+            expanded = await connStr.Expand(unusedUri, ExternalServiceTypes.LNDRest, NetworkType.Mainnet);
             Assert.NotNull(expanded.Macaroons);
             Assert.Null(expanded.MacaroonFilePath);
             Assert.Null(expanded.Macaroons.AdminMacaroon);
@@ -2687,7 +2688,7 @@ donation:
             File.WriteAllBytes($"{macaroonDirectory}/admin.macaroon", new byte[] { 0xaa });
             File.WriteAllBytes($"{macaroonDirectory}/invoice.macaroon", new byte[] { 0xab });
             File.WriteAllBytes($"{macaroonDirectory}/readonly.macaroon", new byte[] { 0xac });
-            expanded = await connStr.Expand(unusedUri, ExternalServiceTypes.LNDRest);
+            expanded = await connStr.Expand(unusedUri, ExternalServiceTypes.LNDRest, NetworkType.Mainnet);
             Assert.NotNull(expanded.Macaroons.AdminMacaroon);
             Assert.NotNull(expanded.Macaroons.InvoiceMacaroon);
             Assert.Equal("ab", expanded.Macaroons.InvoiceMacaroon.Hex);
@@ -2696,7 +2697,7 @@ donation:
 
             Assert.True(ExternalConnectionString.TryParse($"server={unusedUri};cookiefilepath={macaroonDirectory}/charge.cookie", out connStr, out error));
             File.WriteAllText($"{macaroonDirectory}/charge.cookie", "apitoken");
-            expanded = await connStr.Expand(unusedUri, ExternalServiceTypes.Charge);
+            expanded = await connStr.Expand(unusedUri, ExternalServiceTypes.Charge, NetworkType.Mainnet);
             Assert.Equal("apitoken", expanded.APIToken);
         }
 

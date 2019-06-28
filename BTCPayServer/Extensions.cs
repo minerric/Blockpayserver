@@ -185,7 +185,7 @@ namespace BTCPayServer
             }
             if(IPAddress.TryParse(server, out var ip))
             {
-                return ip.IsLocal();
+                return ip.IsLocal() || ip.IsRFC1918();
             }
             return false;
         }
@@ -333,10 +333,15 @@ namespace BTCPayServer
             NBitcoin.Extensions.TryAdd(ctx.Items, "BitpayAuth", value);
         }
 
-        public static (string Signature, String Id, String Authorization) GetBitpayAuth(this HttpContext ctx)
+        public static bool TryGetBitpayAuth(this HttpContext ctx, out (string Signature, String Id, String Authorization) result)
         {
-            ctx.Items.TryGetValue("BitpayAuth", out object obj);
-            return ((string Signature, String Id, String Authorization))obj;
+            if (ctx.Items.TryGetValue("BitpayAuth", out object obj))
+            {
+                result = ((string Signature, String Id, String Authorization))obj;
+                return true;
+            }
+            result = default;
+            return false;
         }
 
         public static StoreData GetStoreData(this HttpContext ctx)

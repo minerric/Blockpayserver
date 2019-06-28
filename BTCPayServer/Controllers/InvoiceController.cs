@@ -67,6 +67,7 @@ namespace BTCPayServer.Controllers
         {
             if (!store.HasClaim(Policies.CanCreateInvoice.Key))
                 throw new UnauthorizedAccessException();
+            invoice.Currency = invoice.Currency?.ToUpperInvariant() ?? "USD";
             InvoiceLogs logs = new InvoiceLogs();
             logs.Write("Creation of invoice starting");
             var entity = _InvoiceRepository.CreateNewInvoice();
@@ -158,7 +159,7 @@ namespace BTCPayServer.Controllers
             var fetchingByCurrencyPair = _RateProvider.FetchRates(currencyPairsToFetch, rateRules, cancellationToken);
             var fetchingAll = WhenAllFetched(logs, fetchingByCurrencyPair);
             var supportedPaymentMethods = store.GetSupportedPaymentMethods(_NetworkProvider)
-                                               .Where(s => !excludeFilter.Match(s.PaymentId))
+                                               .Where(s => !excludeFilter.Match(s.PaymentId) && _paymentMethodHandlerDictionary.Support(s.PaymentId))
                                                .Select(c =>
                                                 (Handler: _paymentMethodHandlerDictionary[c.PaymentId],
                                                 SupportedPaymentMethod: c,

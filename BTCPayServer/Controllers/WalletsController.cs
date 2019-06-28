@@ -410,7 +410,7 @@ namespace BTCPayServer.Controllers
             }
             psbt.SignAll(settings.AccountDerivation, signingKey, rootedKeyPath);
             ModelState.Remove(nameof(viewModel.PSBT));
-            return await WalletPSBTReady(walletId, psbt.ToBase64(), signingKey.GetWif(network.NBitcoinNetwork).ToString(), rootedKeyPath.ToString());
+            return await WalletPSBTReady(walletId, psbt.ToBase64(), signingKey.GetWif(network.NBitcoinNetwork).ToString(), rootedKeyPath?.ToString());
         }
 
         private string ValueToString(Money v, BTCPayNetworkBase network)
@@ -488,7 +488,7 @@ namespace BTCPayServer.Controllers
 
         [HttpPost]
         [Route("{walletId}/rescan")]
-        [Authorize(Policy = Policies.CanModifyServerSettings.Key)]
+        [Authorize(Policy = Policies.CanModifyServerSettings.Key, AuthenticationSchemes = Policies.CookieAuthentication)]
         public async Task<IActionResult> WalletRescan(
             [ModelBinder(typeof(WalletIdModelBinder))]
             WalletId walletId, RescanWalletModel vm)
